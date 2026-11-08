@@ -91,6 +91,8 @@ async def put_secret(key: str, body: SecretIn):
         raise HTTPException(404, f"unknown secret {key}") from e
     if key == "soloist_api_key":
         asyncio.create_task(core.apply_settings({"api_key"}))
+    elif key.startswith("icecast_"):
+        asyncio.create_task(core.apply_settings({"icecast_secret"}))
     return core.store.secrets_status()
 
 

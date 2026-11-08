@@ -116,3 +116,16 @@ def test_webapi_login_url(tmp_path):
     s.update({"webapi": {"client_id": "abc"}})
     u = w.login_url()
     assert "client_id=abc" in u and "code_challenge_method=S256" in u and "127.0.0.1%3A8888" in u
+
+
+def test_icecast_seeded_from_env_once(tmp_path):
+    env = Env.from_environ({"ICECAST_MODE": "external", "ICECAST_HOST": "10.1.1.1", "ICECAST_PORT": "9000",
+                            "ICECAST_SOURCE": "src1", "ICECAST_MOUNT": "live"})
+    s = Store(tmp_path, env=env)
+    assert s.settings.icecast.mode == "external" and s.settings.icecast.host == "10.1.1.1"
+    assert s.settings.icecast.mount == "/live" and s.get_secret("icecast_source") == "src1"
+    s.update({"icecast": {"mode": "internal", "port": 8200, "mount": "x"}})
+    s.set_secret("icecast_source", "fromui")
+    s2 = Store(tmp_path, env=env)  # .env no longer overrides UI values
+    assert s2.settings.icecast.mode == "internal" and s2.settings.icecast.port == 8200
+    assert s2.settings.icecast.mount == "/x" and s2.get_secret("icecast_source") == "fromui"

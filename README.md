@@ -52,10 +52,12 @@ already used on the host, change it in `.env`. The container exits with an error
 
 ## Configuration
 
-`.env` holds only bootstrap settings: volume paths, web port and the Icecast connection
-(`ICECAST_MODE=internal|external`, host, port, mount, passwords). Everything else
-(device name, initial volume, cache size, codec, bitrate, sample rate, FLAC bit depth,
-updater policy, API token) is edited in the web UI and saved to `$DATA_DIR/config.json`.
+`.env` holds bootstrap settings: volume paths and web port. The `ICECAST_*` values are only
+used as defaults on first start; afterwards Icecast (internal/external, host, port, mount,
+source and admin passwords) is managed in the web UI like everything else (device name,
+initial volume, cache size, codec, bitrate, sample rate, FLAC bit depth, updater policy,
+API token), and saved to `$DATA_DIR/config.json`. In external mode the internal Icecast is not
+started.
 Secrets are stored in `$DATA_DIR/secrets.json` (mode 0600) and never returned by the API.
 
 ### Encoders

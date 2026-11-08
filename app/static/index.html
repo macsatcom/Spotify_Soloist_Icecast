@@ -249,8 +249,19 @@ pre.log{background:#0c0b09;border:1px solid var(--line);padding:12px;font:12px/1
     <p class="hint" id="e-hint"></p>
   </div>
   <div class="panel">
-    <h2>Icecast <span style="text-transform:none;letter-spacing:0">(set in .env)</span></h2>
-    <div class="grid" id="ice"></div>
+    <h2>Icecast</h2>
+    <div class="grid">
+      <div><label for="i-mode">Server</label><select id="i-mode">
+        <option value="internal">Internal (built into this container)</option>
+        <option value="external">External (existing Icecast server)</option></select></div>
+      <div data-ext><label for="i-host">Host</label><input id="i-host" placeholder="192.168.1.50"></div>
+      <div><label for="i-port">Port</label><input id="i-port" type="number" min="1" max="65535"></div>
+      <div><label for="i-mount">Mount</label><input id="i-mount" placeholder="/spotify"></div>
+      <div><label for="i-src">Source password <span id="i-srcset"></span></label><input id="i-src" type="password" autocomplete="off" placeholder="leave empty to keep"></div>
+      <div><label for="i-auser">Admin user</label><input id="i-auser"></div>
+      <div><label for="i-apass">Admin password <span id="i-apassset"></span></label><input id="i-apass" type="password" autocomplete="off" placeholder="leave empty to keep"></div>
+    </div>
+    <p class="hint" id="i-hint"></p>
   </div>
   <div class="panel">
     <h2>Updater</h2>
@@ -423,9 +434,11 @@ async function loadConfig() {
   sv('#e-bd', s.encoder.bit_depth); sv('#e-fc', s.encoder.flac_compression); sv('#e-name', s.encoder.stream_name); sv('#e-desc', s.encoder.stream_description);
   $('#u-auto').checked = s.updater.auto_update; sv('#u-int', s.updater.check_interval_hours); sv('#u-force', s.updater.force_update_days_left);
   $('#a-en').checked = s.security.api_token_enabled; $('#a-set').textContent = cfg.secrets.api_token ? '· set' : '· not set';
-  $('#ice').innerHTML = [['Mode', e.icecast_mode], ['Host', e.icecast_host], ['Port', e.icecast_port], ['Mount', e.icecast_mount], ['Admin user', e.icecast_admin_user]]
-    .map(([k, v]) => `<div><label>${k}</label><input disabled value="${esc(v)}"></div>`).join('');
-  codecUi();
+  const i = s.icecast;
+  sv('#i-mode', i.mode); sv('#i-host', i.host); sv('#i-port', i.port); sv('#i-mount', i.mount); sv('#i-auser', i.admin_user);
+  $('#i-srcset').textContent = cfg.secrets.icecast_source ? '· set' : '· not set';
+  $('#i-apassset').textContent = cfg.secrets.icecast_admin_pass ? '· set' : '· not set';
+  codecUi(); iceUi();
 }
 function codecUi() {
   const c = $('#e-codec').value;
@@ -435,6 +448,14 @@ function codecUi() {
     mp3: 'Max 320 kbps. Track titles are pushed to the stream.', aac: 'Track titles are pushed to the stream.', vorbis: ''}[c];
 }
 $('#e-codec').onchange = codecUi;
+function iceUi() {
+  const ext = $('#i-mode').value === 'external';
+  $$('[data-ext]').forEach(x => x.style.display = ext ? '' : 'none');
+  $('#i-hint').textContent = ext
+    ? 'The container streams to your server; the internal Icecast is not started. Source password must match the server. Admin credentials are used to push track titles (MP3/AAC).'
+    : 'Runs Icecast inside the container on this port (host network, so the port must be free). Listeners connect to http://<this host>:<port><mount>.';
+}
+$('#i-mode').onchange = iceUi;
 $('#b-gen').onclick = () => { const a = new Uint8Array(24); crypto.getRandomValues(a); $('#a-tok').type = 'text'; $('#a-tok').value = [...a].map(b => b.toString(16).padStart(2, '0')).join(''); };
 $('#b-save').onclick = async () => {
   const num = id => $(id).value === '' ? null : +$(id).value;
@@ -442,16 +463,22 @@ $('#b-save').onclick = async () => {
   if ($('#a-en').checked && !tok && !cfg.secrets.api_token) return toast('Set a token before enabling it', true);
   if (key) await api('/secrets/soloist_api_key', 'PUT', {value: key});
   if (tok) { await api('/secrets/api_token', 'PUT', {value: tok}); token = tok; localStorage.setItem('soloist_token', tok); }
+  const isrc = $('#i-src').value.trim(), iap = $('#i-apass').value.trim();
+  if (isrc) await api('/secrets/icecast_source', 'PUT', {value: isrc});
+  if (iap) await api('/secrets/icecast_admin_pass', 'PUT', {value: iap});
+  if ($('#i-mode').value === 'external' && !$('#i-host').value.trim()) return toast('External Icecast needs a host', true);
   const r = await api('/config', 'PUT', {
     soloist: {device_name: $('#s-name').value, initial_volume: num('#s-ivol'), cache_size_mb: num('#s-cache') || 0,
       extra_args: $('#s-extra').value.split(/\s+/).filter(Boolean), verbose: $('#s-verbose').checked},
     encoder: {codec: $('#e-codec').value, bitrate_kbps: num('#e-br'), sample_rate: num('#e-sr'), bit_depth: num('#e-bd'),
       flac_compression: num('#e-fc'), stream_name: $('#e-name').value, stream_description: $('#e-desc').value},
+    icecast: {mode: $('#i-mode').value, host: $('#i-host').value.trim() || '127.0.0.1', port: num('#i-port'),
+      mount: $('#i-mount').value.trim() || '/spotify', admin_user: $('#i-auser').value.trim() || 'admin'},
     updater: {auto_update: $('#u-auto').checked, check_interval_hours: num('#u-int'), force_update_days_left: num('#u-force')},
     security: {api_token_enabled: $('#a-en').checked}});
-  $('#s-key').value = ''; $('#a-tok').value = ''; $('#a-tok').type = 'password';
+  $('#s-key').value = ''; $('#a-tok').value = ''; $('#i-src').value = ''; $('#i-apass').value = ''; $('#a-tok').type = 'password';
   toast(r.changed.length || key ? 'Saved — restarting: ' + (r.changed.join(', ') || 'soloist') : 'Saved, nothing changed');
-  if (r.changed.includes('encoder')) { $('#audio').removeAttribute('src'); $('#audio').load(); }
+  if (r.changed.includes('encoder') || r.changed.includes('icecast') || isrc) { $('#audio').removeAttribute('src'); $('#audio').load(); }
   setTimeout(() => { loadConfig(); loadStatus(); }, 1500);
 };
 

@@ -30,7 +30,7 @@ PULSE_NOISE = ("system bus", "D-Bus", "running PA in system mode", "WhatIsWrongW
 class Core:
     def __init__(self, env: Env):
         self.env = env
-        self.store = Store(env.data_dir, env.seed_api_key)
+        self.store = Store(env.data_dir, env.seed_api_key, env)
         self.soloist_dir = env.data_dir / "soloist"
         self.soloist_dir.mkdir(parents=True, exist_ok=True)
         env.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -40,13 +40,24 @@ class Core:
         self.pairing = False
         self.pair_logs: list[str] = []
         self._bg: list[asyncio.Task] = []
-        redact = lambda s: encoder.redact(self._redact_key(s), env)  # noqa: E731
+        self._apply_lock = asyncio.Lock()
+        redact = lambda s: encoder.redact(self._redact_key(s), self.ice)  # noqa: E731
 
         self.pulse = Proc("pulseaudio", self._pulse_cmd, redact=redact, ignore=PULSE_NOISE)
         self.icecast = Proc("icecast", self._icecast_cmd, redact=redact)
         self.encoder = Proc("encoder", self._encoder_cmd, redact=redact)
         self.soloist = Proc("soloist", self._soloist_cmd, on_exit=self._soloist_exit, redact=redact)
         self.procs = [self.pulse, self.icecast, self.encoder, self.soloist]
+
+    @property
+    def ice(self) -> Env:
+        """Effective Icecast settings (web UI store), in the Env shape the encoder helpers use."""
+        i = self.store.settings.icecast
+        return self.env.model_copy(update={
+            "icecast_mode": i.mode, "icecast_host": "127.0.0.1" if i.mode == "internal" else i.host,
+            "icecast_port": i.port, "icecast_mount": i.mount, "icecast_admin_user": i.admin_user,
+            "icecast_source": self.store.get_secret("icecast_source") or "changeme",
+            "icecast_admin_pass": self.store.get_secret("icecast_admin_pass") or "changeme_admin"})
 
     def _redact_key(self, s: str) -> str:
         k = self.store.get_secret("soloist_api_key")
@@ -79,14 +90,14 @@ class Core:
 
     def _icecast_cmd(self):
         cfg = Path("/tmp/icecast.xml")
-        cfg.write_text(encoder.icecast_xml(self.env, self.store.settings.encoder))
+        cfg.write_text(encoder.icecast_xml(self.ice, self.store.settings.encoder))
         logdir = Path("/tmp/icecast-log")
         logdir.mkdir(exist_ok=True)
         shutil.chown(logdir, "icecast2", "icecast")
         return ["icecast2", "-c", str(cfg)], None
 
     def _encoder_cmd(self):
-        return ["bash", "-c", encoder.pipeline_shell(self.store.settings.encoder, self.env)], PULSE_ENV
+        return ["bash", "-c", encoder.pipeline_shell(self.store.settings.encoder, self.ice)], PULSE_ENV
 
     def soloist_args(self, extra: list[str] | None = None) -> list[str]:
         s = self.store.settings.soloist
@@ -123,7 +134,7 @@ class Core:
     async def start(self) -> None:
         self.pulse.start()
         await self._wait_for(PULSE_SOCKET, 15)
-        if self.env.icecast_mode == "internal":
+        if self.ice.icecast_mode == "internal":
             self.icecast.start()
             await asyncio.sleep(1)
         self.encoder.start()
@@ -163,11 +174,15 @@ class Core:
         proc = {p.name: p for p in self.procs}.get(name)
         if not proc:
             raise KeyError(name)
-        if name == "icecast" and self.env.icecast_mode != "internal":
+        if name == "icecast" and self.ice.icecast_mode != "internal":
             raise ValueError("icecast is external")
         await proc.restart()
 
     async def apply_settings(self, changed_sections: set[str], old: dict | None = None) -> None:
+        async with self._apply_lock:
+            await self._apply_settings(changed_sections, old)
+
+    async def _apply_settings(self, changed_sections: set[str], old: dict | None = None) -> None:
         """Restart only what the changed settings affect."""
         if "encoder" in changed_sections:
             enc = self.store.settings.encoder
@@ -179,6 +194,13 @@ class Core:
                 await self.restart_component("pulseaudio")
             else:  # codec/bitrate/name: only the encoder restarts, playback continues
                 await self.encoder.restart()
+        if "icecast" in changed_sections or "icecast_secret" in changed_sections:
+            if self.ice.icecast_mode == "internal":
+                await self.icecast.restart()  # regenerates icecast.xml
+                await asyncio.sleep(1)
+            else:
+                await self.icecast.stop()
+            await self.encoder.restart()
         if "soloist" in changed_sections or "api_key" in changed_sections:
             if self.store.get_secret("soloist_api_key") and self.updater.current():
                 await self.soloist.restart()
@@ -258,14 +280,15 @@ class Core:
         title = format_title(playback.get("item") or {})
         if not title:
             return
-        url = f"http://{self.env.icecast_host}:{self.env.icecast_port}/admin/metadata"
-        params = {"mount": self.env.icecast_mount, "mode": "updinfo", "song": title, "charset": "UTF-8"}
+        ice = self.ice
+        url = f"http://{ice.icecast_host}:{ice.icecast_port}/admin/metadata"
+        params = {"mount": ice.icecast_mount, "mode": "updinfo", "song": title, "charset": "UTF-8"}
         try:
             async with httpx.AsyncClient(timeout=5) as c:
-                r = await c.get(url, params=params, auth=(self.env.icecast_admin_user, self.env.icecast_admin_pass))
+                r = await c.get(url, params=params, auth=(ice.icecast_admin_user, ice.icecast_admin_pass))
                 if r.status_code >= 400:
                     # some servers accept source credentials for metadata
-                    r = await c.get(url, params=params, auth=("source", self.env.icecast_source))
+                    r = await c.get(url, params=params, auth=("source", ice.icecast_source))
                 if r.status_code >= 400:
                     log.warning("metadata push failed: HTTP %s", r.status_code)
         except httpx.HTTPError as e:
@@ -273,8 +296,9 @@ class Core:
 
     # ---------- status ----------
     def stream_url(self, host: str | None = None) -> str:
-        h = self.env.icecast_host if self.env.icecast_mode == "external" else (host or "localhost")
-        return f"http://{h}:{self.env.icecast_port}{self.env.icecast_mount}"
+        ice = self.ice
+        h = ice.icecast_host if ice.icecast_mode == "external" else (host or "localhost")
+        return f"http://{h}:{ice.icecast_port}{ice.icecast_mount}"
 
     def status(self, host: str | None = None) -> dict:
         enc = self.store.settings.encoder
@@ -284,7 +308,7 @@ class Core:
                         "status": self.client.status, "pairing": self.pairing,
                         "api_key_set": bool(self.store.get_secret("soloist_api_key"))},
             "stream": {"url": self.stream_url(host), "codec": enc.codec,
-                       "content_type": encoder.CODECS[enc.codec][1], "mode": self.env.icecast_mode},
+                       "content_type": encoder.CODECS[enc.codec][1], "mode": self.ice.icecast_mode},
             "updater": self.updater.status(),
             "processes": {p.name: p.status() for p in self.procs},
         }

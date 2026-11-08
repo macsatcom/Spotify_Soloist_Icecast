@@ -79,6 +79,14 @@ class UpdaterSettings(BaseModel):
     auto_update: bool = True
 
 
+class IcecastSettings(BaseModel):
+    mode: Literal["internal", "external"] = "internal"
+    host: str = "127.0.0.1"  # external only; internal always uses localhost
+    port: int = Field(default=8100, ge=1, le=65535)
+    mount: str = "/spotify"
+    admin_user: str = "admin"
+
+
 class SecuritySettings(BaseModel):
     api_token_enabled: bool = False
 
@@ -91,18 +99,20 @@ class WebApiSettings(BaseModel):
 class Settings(BaseModel):
     soloist: SoloistSettings = SoloistSettings()
     encoder: EncoderSettings = EncoderSettings()
+    icecast: IcecastSettings = IcecastSettings()
     updater: UpdaterSettings = UpdaterSettings()
     security: SecuritySettings = SecuritySettings()
     webapi: WebApiSettings = WebApiSettings()
 
 
-SECRET_KEYS = ("soloist_api_key", "api_token", "webapi_client_secret", "webapi_refresh_token")
+SECRET_KEYS = ("soloist_api_key", "api_token", "webapi_client_secret", "webapi_refresh_token",
+               "icecast_source", "icecast_admin_pass")
 
 
 class Store:
     """Persisted settings and secrets. Thread-safe, atomic writes."""
 
-    def __init__(self, data_dir: Path, seed_api_key: str = ""):
+    def __init__(self, data_dir: Path, seed_api_key: str = "", env: "Env | None" = None):
         self.data_dir = data_dir
         self.cfg_path = data_dir / "config.json"
         self.sec_path = data_dir / "secrets.json"
@@ -112,6 +122,19 @@ class Store:
         self.secrets: dict[str, str] = self._load_json(self.sec_path)
         if seed_api_key and not self.secrets.get("soloist_api_key"):
             self.set_secret("soloist_api_key", seed_api_key)
+        if env is not None:
+            self._seed_icecast(env)
+
+    def _seed_icecast(self, env: "Env") -> None:
+        """First run only: take Icecast settings from .env; afterwards the web UI owns them."""
+        if "icecast" not in self._load_json(self.cfg_path):
+            self.settings.icecast = IcecastSettings(
+                mode=env.icecast_mode, host=env.icecast_host, port=env.icecast_port,
+                mount=env.icecast_mount, admin_user=env.icecast_admin_user)
+            self.save()
+        for k, v in (("icecast_source", env.icecast_source), ("icecast_admin_pass", env.icecast_admin_pass)):
+            if v and not self.secrets.get(k):
+                self.set_secret(k, v)
 
     @staticmethod
     def _load_json(p: Path) -> dict:
@@ -142,6 +165,9 @@ class Store:
         """Deep-merge a patch into settings, validate, persist."""
         with self._lock:
             merged = _deep_merge(self.settings.model_dump(mode="json"), patch)
+            m = (merged.get("icecast") or {}).get("mount")
+            if m and not m.startswith("/"):
+                merged["icecast"]["mount"] = "/" + m
             new = Settings.model_validate(merged)
             self.settings = new
             self._atomic_write(self.cfg_path, new.model_dump(mode="json"))
