@@ -46,8 +46,13 @@ Plus, optionally, an **API token** of your own choosing to protect this containe
 
 ### 1. Start the container
 
+Pre-built images for amd64 and arm64 are published to
+`ghcr.io/macsatcom/spotify-soloist-icecast` on every release
+([releases](https://github.com/macsatcom/Spotify_Soloist_Icecast/releases)).
+
 ```bash
-git clone <this repo> && cd Spotify_Soloist_Icecast/docker
+git clone https://github.com/macsatcom/Spotify_Soloist_Icecast.git
+cd Spotify_Soloist_Icecast/docker
 cp .env.example .env
 ```
 
@@ -60,7 +65,8 @@ Edit `.env`:
 - `SOLOIST_API_KEY`: leave empty; you'll paste it in the UI (step 3).
 
 ```bash
-docker compose up -d --build
+docker compose pull && docker compose up -d     # pre-built image
+# or: docker compose up -d --build                # build from source
 docker compose logs -f      # optional: watch it start
 ```
 
@@ -196,8 +202,11 @@ no avahi/dbus needed). Because of host networking, ports cannot be remapped:
 ### Updating the container
 
 ```bash
-cd docker && git pull && docker compose up -d --build
+cd docker && git pull && docker compose pull && docker compose up -d
 ```
+
+Pin a version with `image: ghcr.io/macsatcom/spotify-soloist-icecast:1.0.0` (or `:1.0` for
+patch updates) in `docker-compose.yml`.
 
 Settings, secrets, the Spotify session and the Soloist binary live on the `/data` volume and
 are kept. The Soloist binary itself is updated automatically (see above).
@@ -337,6 +346,14 @@ Paged responses: `{ items: [Entity], total, offset, limit, next }`.
 - **Silence:** the stream sends silence while nothing plays; select the device in Spotify.
 - **External Icecast not receiving:** check host/port/mount and the source password; see the
   encoder log.
+
+## Releases
+
+Releases are automated (`.github/workflows/release.yml`): bump the version in `VERSION` and push
+to `main`. CI runs the tests, builds the multi-arch image, pushes
+`ghcr.io/macsatcom/spotify-soloist-icecast:<version>`, `:<major.minor>` and `:latest`, and creates
+the `v<version>` tag and GitHub release. Pushes without a version change only run the tests.
+The Soloist binary is never included in an image or release.
 
 ## License
 

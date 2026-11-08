@@ -346,7 +346,7 @@ async function loadStatus() {
   led('#led-ice', status.stream.mode === 'external' ? 'warn' : (p.icecast.running ? 'on' : 'err'));
   const d = u.days_left; led('#led-bin', d == null ? 'err' : d > 10 ? 'on' : 'warn');
   $('#led-bin-t').textContent = d == null ? 'No build' : `Build ${Math.floor(d)}d`;
-  $('#devname').textContent = (s.device_name || 'Soloist') + ' · ' + status.stream.codec.toUpperCase();
+  $('#devname').textContent = (s.device_name || 'Soloist') + ' · ' + status.stream.codec.toUpperCase() + ' · v' + (status.version || '?');
   $('#pairname').textContent = s.device_name || 'Soloist';
   $('#streamurl').textContent = 'STREAM ' + status.stream.url;
   if (!$('#audio').src) $('#audio').src = status.stream.url;

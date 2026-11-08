@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt/app
 COPY requirements.txt .
 RUN pip3 install -r requirements.txt
+COPY VERSION ./
 COPY app ./app
 
 ENV DATA_DIR_IN_CONTAINER=/data \

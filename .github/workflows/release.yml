@@ -1,0 +1,101 @@
+# Build, test and release.
+#  - Every push / PR: run unit tests.
+#  - Push to main where VERSION holds a version without an existing tag:
+#      multi-arch image (amd64, arm64) -> ghcr.io/<owner>/spotify-soloist-icecast:<version>, :<major.minor>, :latest
+#      git tag v<version> + GitHub Release with generated notes.
+# To release: bump VERSION (e.g. 1.0.1) and push to main.
+# The Spotify Soloist binary is never part of the image or release (downloaded at runtime).
+name: release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/spotify-soloist-icecast
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test image and run unit tests
+        run: |
+          docker build -f docker/Dockerfile -t test .
+          docker run --rm -v "$PWD/tests:/opt/app/tests" --entrypoint sh test \
+            -c "pip3 -q install pytest && python3 -m pytest -q tests"
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: v
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "VERSION '$v' is not semver"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "pull_request" ] && [ "${{ github.ref }}" = "refs/heads/main" ] \
+             && ! git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "release=true" >> "$GITHUB_OUTPUT"; echo "Will release v$v"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"; echo "No release (tag v$v exists or not on main)"
+          fi
+
+  release:
+    needs: [test, version]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        run: |
+          v=${{ needs.version.outputs.version }}
+          echo "list=${IMAGE}:${v},${IMAGE}:${v%.*},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.licenses=GPL-3.0-only
+            org.opencontainers.image.description=Spotify Soloist to Icecast with web UI and control API
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          {
+            echo "Docker image (amd64, arm64):"
+            echo
+            echo '```'
+            echo "docker pull ${IMAGE}:${V}"
+            echo '```'
+            echo
+            echo "The Spotify Soloist binary is not included; the container downloads it from Spotify"
+            echo "at runtime and keeps it updated. See the README for setup."
+          } > notes.md
+          gh release create "v${V}" --target "${{ github.sha }}" --title "v${V}" \
+            --notes-file notes.md --generate-notes

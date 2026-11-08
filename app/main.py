@@ -29,7 +29,15 @@ async def lifespan(_: FastAPI):
     await core.shutdown()
 
 
-app = FastAPI(title="Soloist Icecast", version="0.1.0", lifespan=lifespan)
+def _version() -> str:
+    for p in (Path(__file__).parent.parent / "VERSION", Path("/opt/app/VERSION")):
+        if p.exists():
+            return p.read_text().strip()
+    return "dev"
+
+
+VERSION = _version()
+app = FastAPI(title="Soloist Icecast", version=VERSION, lifespan=lifespan)
 
 
 def auth(request: Request) -> None:
@@ -52,7 +60,7 @@ api = Depends(auth)
 
 @app.get("/api/v1/status", dependencies=[api])
 async def status(request: Request):
-    return core.status(host_of(request))
+    return {**core.status(host_of(request)), "version": VERSION}
 
 
 @app.get("/api/v1/health")
