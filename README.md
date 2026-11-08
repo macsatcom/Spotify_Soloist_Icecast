@@ -32,21 +32,159 @@ start the container downloads the official build for your architecture into
 - fetches immediately if Soloist exits with code `10` (expired),
 - keeps the previous build for rollback.
 
-## Quick start
+## First-time setup
+
+You need three things, all from your own Spotify **Premium** account:
+
+| What | Used for | Where |
+|---|---|---|
+| Soloist API key | running Soloist at all | developer.spotify.com/dashboard/soloist |
+| Spotify Connect pairing | logging Soloist into your account | the Spotify app (phone/desktop) |
+| Web API app (Client ID) | search and library in the Browse tab (optional) | developer.spotify.com/dashboard |
+
+Plus, optionally, an **API token** of your own choosing to protect this container's API.
+
+### 1. Start the container
 
 ```bash
-cd docker
-cp .env.example .env      # paths, web port, first-start Icecast defaults
-docker compose up -d --build
+git clone <this repo> && cd Spotify_Soloist_Icecast/docker
+cp .env.example .env
 ```
 
-1. Get an API key at <https://developer.spotify.com/dashboard/soloist> (Premium required).
-2. Open `http://<host>:8380` → **Settings**, paste the key, set the device name, save.
-3. In the Spotify app, open the device picker and select the device. The session is stored
-   in `$DATA_DIR/soloist` and survives restarts.
-4. Listen at `http://<host>:8100/spotify` (internal Icecast), or in the **Now playing** tab.
-5. Optional: connect the Spotify Web API in the **Browse** tab for search and library
-   (see [Search & browse](#search--browse-spotify-web-api)).
+Edit `.env`:
+
+- `DATA_DIR` / `CACHE_DIR`: where settings, the Spotify session and the Soloist binary are kept.
+- `WEB_PORT`: web UI port (default 8380). Must be free on the host (host networking).
+- `ICECAST_*`: first-start defaults only. Change at least `ICECAST_SOURCE` and
+  `ICECAST_ADMIN_PASS`. Everything can be changed later in the web UI.
+- `SOLOIST_API_KEY`: leave empty; you'll paste it in the UI (step 3).
+
+```bash
+docker compose up -d --build
+docker compose logs -f      # optional: watch it start
+```
+
+On first start the container downloads the Soloist binary from Spotify (about 20 MB) into
+`$DATA_DIR/bin`. Open `http://<host>:8380`; the **Build** light in the header turns green with
+the number of days left once that is done.
+
+### 2. Get a Soloist API key
+
+1. Log in at <https://developer.spotify.com/dashboard> with your Premium account.
+2. Open <https://developer.spotify.com/dashboard/soloist> (**Spotify Soloist API Key**).
+3. Accept the terms if asked and click **Generate**.
+4. Copy the key. Treat it like a password: it is tied to your account and must not be shared.
+
+### 3. Configure Soloist
+
+1. In the web UI open **Settings → Soloist**.
+2. Paste the key into **API key**, choose a **Device name** (this is what you'll see in Spotify,
+   e.g. `Living room LMS`).
+3. Leave **Initial volume** at 100 (control volume in Lyrion/your player instead).
+4. Click **Save settings** at the bottom. Soloist starts; the **Session** light turns amber
+   (running, not logged in).
+
+The key is stored in `$DATA_DIR/secrets.json` and is never shown again; the field shows
+`· set`. Paste a new key to replace it.
+
+### 4. Pair with your Spotify account
+
+Soloist has no username/password login; it logs in through Spotify Connect:
+
+1. Open the Spotify app on a phone or computer **on the same network**.
+2. Start playing anything, open the device picker (speaker icon) and select your device name.
+3. Soloist logs in, stores the session in `$DATA_DIR/soloist` and starts playing.
+   The **Session** light turns green; **Now playing** shows the track.
+
+The session survives restarts and updates. To switch account or fix a broken session, use
+**Pairing → Re-pair device** and select the device in the Spotify app again within 5 minutes.
+
+If the device does not appear: check that phone and host are on the same LAN/VLAN, that the
+Wi-Fi has no client isolation, that no VPN is active on the phone, and look at **Logs → soloist**.
+
+### 5. Listen
+
+- Internal Icecast: `http://<host>:8100/spotify` (or the player in **Now playing**).
+- Choose codec/quality in **Settings → Encoder** (e.g. FLAC, 24 bit, 48 kHz for lossless).
+- To use an existing Icecast server: **Settings → Icecast → Server: External**, enter host,
+  port, mount and the server's **source password**. Admin user/password are only needed for
+  "Artist – Title" metadata with MP3/AAC.
+
+### 6. Optional: connect the Spotify Web API (search & library)
+
+Soloist itself cannot search or list playlists. For the **Browse** tab (and the `/search`,
+`/library`, `/item` API endpoints) create your own Web API app:
+
+1. Go to <https://developer.spotify.com/dashboard> → **Create app**.
+   - App name/description: anything, e.g. `Soloist Icecast`.
+   - Redirect URI: `http://127.0.0.1:8888/callback` → click **Add**.
+   - APIs used: tick **Web API**.
+   - Accept the terms and **Save**.
+2. Open the app → **Settings**, copy the **Client ID**. (The client secret is not needed.)
+   Check the Redirect URIs list shows exactly what you will enter in the next step.
+3. In the web UI open **Browse**. Enter the Client ID and the Redirect URI, **identical** to
+   the dashboard, including any trailing `/`. (`http://127.0.0.1:8888/` and
+   `http://127.0.0.1:8888/callback` are different URIs to Spotify.)
+4. Click **Connect**. A Spotify tab opens; log in and click **Agree**.
+5. That tab ends on a page that **cannot be reached**. This is expected: nothing runs on
+   127.0.0.1 on your computer. Copy the **whole URL** from the address bar; it looks like
+   `http://127.0.0.1:8888/callback?code=AQB...&state=...`.
+6. Back in the web UI, paste it into the second field and click **Finish**. Search and the
+   library buttons appear, with your account name on the right.
+
+Do steps 4–6 in one go: clicking Connect again, or restarting the container, invalidates the
+pasted URL ("state mismatch"); just click Connect again.
+
+The refresh token is stored in `secrets.json`; you won't need to do this again. **Disconnect**
+in the Browse tab removes it.
+
+Why not `http://<host-ip>:8380/callback`? Spotify only accepts `http://` redirect URIs for
+loopback addresses (`127.0.0.1`, `[::1]`); other addresses must be `https://`. The redirect
+happens in your browser, not in the container, so the loopback address works wherever the
+container runs.
+
+Common errors:
+
+| Message | Cause |
+|---|---|
+| `INVALID_CLIENT: Invalid redirect URI` / "redirect_uri: Not matching configuration" | redirect URI in Browse differs from the dashboard (trailing `/`, `localhost` vs `127.0.0.1`, port, forgot to Save in dashboard) |
+| state mismatch / login session expired | Connect was clicked again or the container restarted; repeat steps 4–6 |
+| `invalid_grant` | the code was already used or is older than ~10 minutes; repeat steps 4–6 |
+| Forbidden on some items | Spotify's development-mode limits, see below |
+
+### 7. Optional: protect the API with a token
+
+By default the API and web UI are open to anyone on your LAN, like the FM Radio daemon. To
+require a token:
+
+1. **Settings → API security**, click **Generate** (or paste your own string).
+2. Tick **Require API token** and **Save settings**.
+3. Your browser stores the token automatically. Other browsers will prompt for it once.
+4. Clients (e.g. the Lyrion plugin, curl) must send it:
+
+```bash
+curl -H "Authorization: Bearer <token>" http://<host>:8380/api/v1/status
+curl "http://<host>:8380/api/v1/listen?token=<token>"     # for URLs that cannot set headers
+```
+
+`/api/v1/health` and the Icecast stream itself are not protected. To turn it off, untick
+**Require API token** and save. If you lose the token, stop the container and set
+`"api_token_enabled": false` in `$DATA_DIR/config.json`.
+
+### Summary of credentials
+
+| Credential | Set in | Stored in |
+|---|---|---|
+| Soloist API key | Settings → Soloist | `secrets.json` |
+| Spotify session | Spotify app device picker | `$DATA_DIR/soloist/` |
+| Web API Client ID / redirect URI | Browse | `config.json` |
+| Web API refresh token | Browse → Connect/Finish | `secrets.json` |
+| Icecast source / admin password | Settings → Icecast | `secrets.json` |
+| API token | Settings → API security | `secrets.json` (+ browser localStorage) |
+
+Back up `$DATA_DIR` to keep all of it. Never commit or share `secrets.json`.
+
+### Ports and host networking
 
 `network_mode: host` is required for Spotify Connect discovery (Soloist does its own mDNS;
 no avahi/dbus needed). Because of host networking, ports cannot be remapped:
@@ -161,15 +299,8 @@ send `Authorization: Bearer <token>` or `?token=<token>`.
 ### Search & browse (Spotify Web API)
 
 Soloist itself cannot search or list your library, so the container proxies the Spotify Web API.
-One-time setup in the **Browse** tab: create an app at developer.spotify.com/dashboard, add the
-redirect URI `http://127.0.0.1:8888/callback`, paste the Client ID, click *Connect*, approve, then
-paste the URL of the (non-loading) callback page back. Uses PKCE (no client secret needed); the
-refresh token is stored in `secrets.json`. All results use the same entity shape as Soloist's events.
-
-The redirect URI in the Browse tab must match one registered in the Spotify app **exactly**
-(including any trailing `/`). Spotify only allows `http://` redirect URIs for loopback
-addresses, so a LAN IP like `http://192.168.1.x:8380/callback` is rejected; the loopback
-redirect plus paste-back works regardless of where the container runs.
+Setup: see [First-time setup, step 6](#6-optional-connect-the-spotify-web-api-search--library).
+All results use the same entity shape as Soloist's events.
 
 | Method | Path | |
 |---|---|---|
