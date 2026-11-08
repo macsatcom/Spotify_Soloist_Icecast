@@ -511,7 +511,7 @@ async function search() {
   $('#w-out').innerHTML = rows(d.track?.items, 'Tracks') + tiles(d.artist?.items, 'Artists') + tiles(d.album?.items, 'Albums') +
     tiles(d.playlist?.items, 'Playlists') + tiles(d.show?.items, 'Podcasts') || '<p class="ctx">No results.</p>';
 }
-$('#b-wsearch').onclick = search; $('#w-q').onkeydown = e => e.key === 'Enter' && search();
+$('#b-wsearch').onclick = search; $('#w-q').onkeydown = e => { if (e.key === 'Enter') search(); };
 async function openItem(uri) {
   $('#w-out').innerHTML = '<p class="ctx">loading…</p>';
   const d = await api('/item/' + encodeURIComponent(uri)), it = d.item;
