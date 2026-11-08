@@ -93,7 +93,8 @@ class WebApi:
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.post(TOKEN_URL, data=data, auth=auth)
         if r.status_code != 200:
-            raise WebApiError(401, f"token request failed: {r.text[:300]}")
+            raise WebApiError(400 if data.get("grant_type") == "authorization_code" else 502,
+                              f"Spotify token request failed: {r.text[:300]}")
         t = r.json()
         self._access = t["access_token"]
         self._expires = time.time() + t.get("expires_in", 3600) - 60
