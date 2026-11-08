@@ -84,8 +84,23 @@ keeps that lossless end-to-end when FLAC is selected.
 | POST | `/api/v1/system/restart/{pulseaudio\|icecast\|encoder\|soloist}` | |
 | GET | `/api/v1/system/logs[?component=]` | |
 
-Playback control, queue, search/browse (Spotify Web API) and `/listen?uri=` follow in later
-milestones; see `docs/API.md` once published.
+### Playback control
+
+| Method | Path | Body |
+|---|---|---|
+| GET | `/api/v1/now` | current playback (+ interpolated `position_ms_now`) |
+| GET | `/api/v1/queue?limit=10` | previous/upcoming |
+| POST | `/api/v1/play` | optional `{ "uri": "spotify:playlist:..." }` |
+| POST | `/api/v1/pause`, `/next`, `/prev`, `/activate`, `/deactivate` | |
+| POST | `/api/v1/seek` | `{ "position_ms": 30000 }` |
+| POST | `/api/v1/volume` | `{ "volume": 0-100 }` |
+| POST | `/api/v1/shuffle` | `{ "enabled": true }` |
+| POST | `/api/v1/repeat` | `{ "mode": "off\|context\|track" }` |
+| POST | `/api/v1/queue` | `{ "uri": "spotify:track:..." }` |
+| GET | `/api/v1/stream` | 302 to the Icecast stream |
+| GET | `/api/v1/listen[?uri=]` | activate, optionally play URI, 302 to stream (for Lyrion) |
+
+Search/browse (Spotify Web API) follows in a later milestone.
 
 ## License
 
