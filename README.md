@@ -3,7 +3,7 @@
 Runs [Spotify Soloist](https://developer.spotify.com/documentation/soloist) (a headless
 Spotify Connect device) in a Docker container and streams its audio to Icecast, with a
 web UI and an HTTP control API. Built as the backend for a future Lyrion Music Server plugin
-(separate project), in the spirit of [Lyrion_FM_Radio](https://github.com/macsatcom/Lyrion_FM_Radio).
+(separate project; see [docs/API.md](docs/API.md)), in the spirit of [Lyrion_FM_Radio](https://github.com/macsatcom/Lyrion_FM_Radio).
 
 > **Personal use only.** The Soloist API key belongs to your Spotify account. Do not expose
 > this container to the internet or share it with others.
@@ -264,6 +264,11 @@ Soloist itself has no quality option; it outputs PCM to PulseAudio, and the cont
 keeps that lossless end-to-end when FLAC is selected.
 
 ## API (v1)
+
+**Writing an integration** (Lyrion plugin, Home Assistant, scripts…)? See
+[docs/API.md](docs/API.md): configuration (API URL, token, stream discovery), the entity
+format, playback, search/browse, live events, recipes and a Lyrion plugin design.
+The tables below are a quick reference.
 
 Authentication is off by default (LAN, personal use). When the token is enabled in Settings,
 send `Authorization: Bearer <token>` or `?token=<token>`.
