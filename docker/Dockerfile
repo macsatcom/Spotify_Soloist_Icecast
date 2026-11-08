@@ -23,7 +23,7 @@ COPY app ./app
 
 ENV DATA_DIR_IN_CONTAINER=/data \
     CACHE_DIR_IN_CONTAINER=/cache \
-    WEB_PORT=8080
+    WEB_PORT=8380
 VOLUME ["/data", "/cache"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \

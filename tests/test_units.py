@@ -40,7 +40,7 @@ def test_ffmpeg_cmd(codec, lib, fmt):
     env = Env.from_environ({"ICECAST_SOURCE": "p@ss/w"})
     cmd = encoder.ffmpeg_cmd(EncoderSettings(codec=codec), env)
     assert lib in cmd and cmd[cmd.index("-f", 10) + 1] == fmt
-    assert cmd[-1] == "icecast://source:p%40ss%2Fw@127.0.0.1:8000/spotify"
+    assert cmd[-1] == "icecast://source:p%40ss%2Fw@127.0.0.1:8100/spotify"
     if codec == "opus":
         assert cmd[cmd.index("-ar", 12) + 1] == "48000"
 

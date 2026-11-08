@@ -41,12 +41,14 @@ docker compose up -d --build
 ```
 
 1. Get an API key at <https://developer.spotify.com/dashboard/soloist> (Premium required).
-2. Open `http://<host>:8080`, paste the key, set the device name.
+2. Open `http://<host>:8380`, paste the key, set the device name.
 3. In the Spotify app, open the device picker and select the device. The session is stored
    in `$DATA_DIR/soloist` and survives restarts.
-4. Listen at `http://<host>:8000/spotify` (internal Icecast).
+4. Listen at `http://<host>:8100/spotify` (internal Icecast).
 
-`network_mode: host` is required for Spotify Connect discovery.
+`network_mode: host` is required for Spotify Connect discovery. Because of host networking,
+ports cannot be remapped: if `WEB_PORT` (default 8380) or `ICECAST_PORT` (default 8100) is
+already used on the host, change it in `.env`. The container exits with an error if the port is taken.
 
 ## Configuration
 

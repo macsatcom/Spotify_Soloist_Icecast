@@ -18,10 +18,10 @@ from pydantic import BaseModel, Field
 class Env(BaseModel):
     data_dir: Path = Path("/data")
     cache_dir: Path = Path("/cache")
-    web_port: int = 8080
+    web_port: int = 8380
     icecast_mode: Literal["internal", "external"] = "internal"
     icecast_host: str = "127.0.0.1"
-    icecast_port: int = 8000
+    icecast_port: int = 8100
     icecast_mount: str = "/spotify"
     icecast_source: str = "changeme"
     icecast_admin_user: str = "admin"
@@ -39,10 +39,10 @@ class Env(BaseModel):
         return cls(
             data_dir=Path(g("DATA_DIR_IN_CONTAINER", "/data")),
             cache_dir=Path(g("CACHE_DIR_IN_CONTAINER", "/cache")),
-            web_port=int(g("WEB_PORT", "8080")),
+            web_port=int(g("WEB_PORT", "8380")),
             icecast_mode=mode if mode in ("internal", "external") else "internal",
             icecast_host="127.0.0.1" if mode == "internal" else g("ICECAST_HOST", "127.0.0.1"),
-            icecast_port=int(g("ICECAST_PORT", "8000")),
+            icecast_port=int(g("ICECAST_PORT", "8100")),
             icecast_mount=mount,
             icecast_source=g("ICECAST_SOURCE", "changeme"),
             icecast_admin_user=g("ICECAST_ADMIN_USER", "admin"),
