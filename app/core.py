@@ -167,13 +167,18 @@ class Core:
             raise ValueError("icecast is external")
         await proc.restart()
 
-    async def apply_settings(self, changed_sections: set[str]) -> None:
+    async def apply_settings(self, changed_sections: set[str], old: dict | None = None) -> None:
         """Restart only what the changed settings affect."""
         if "encoder" in changed_sections:
-            # sample rate/format changes require pulse restart
-            await self.restart_component("pulseaudio")
-            if self.env.icecast_mode == "internal":
-                await self.icecast.restart()
+            enc = self.store.settings.encoder
+            o = (old or {}).get("encoder", {})
+            fmt_changed = (o.get("sample_rate") != enc.sample_rate or
+                           encoder.capture_format(enc) != encoder.capture_format(
+                               type(enc).model_validate({**enc.model_dump(), **o})))
+            if fmt_changed:  # PCM format/rate change needs a new null sink (interrupts Soloist briefly)
+                await self.restart_component("pulseaudio")
+            else:  # codec/bitrate/name: only the encoder restarts, playback continues
+                await self.encoder.restart()
         if "soloist" in changed_sections or "api_key" in changed_sections:
             if self.store.get_secret("soloist_api_key") and self.updater.current():
                 await self.soloist.restart()

@@ -75,7 +75,7 @@ async def put_config(patch: dict):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(422, str(e)) from e
     changed = {k for k in new if new[k] != old.get(k)}
-    asyncio.create_task(core.apply_settings(changed))
+    asyncio.create_task(core.apply_settings(changed, old))
     return {"settings": new, "changed": sorted(changed)}
 
 
@@ -208,10 +208,12 @@ async def now():
 
 @app.get("/api/v1/queue", dependencies=[api])
 async def get_queue(limit: int = 10):
+    if not core.client.connected or not core.client.auth.get("logged_in"):
+        return {"previous": [], "upcoming": []}
     try:
         ev = await core.client.query("get_queue", "queue_changed", limit=limit)
-    except CommandError as e:
-        raise HTTPException(409, str(e)) from e
+    except CommandError:
+        return {"previous": [], "upcoming": []}
     return {"previous": ev.get("previous", []), "upcoming": ev.get("upcoming", [])}
 
 
