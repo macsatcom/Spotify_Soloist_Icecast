@@ -23,11 +23,12 @@ class Proc:
 
     def __init__(self, name: str, build: Callable[[], tuple[list[str], dict[str, str] | None]],
                  on_exit: Callable[[int], Awaitable[bool]] | None = None,
-                 redact: Callable[[str], str] = lambda s: s):
+                 redact: Callable[[str], str] = lambda s: s, ignore: tuple[str, ...] = ()):
         self.name = name
         self.build = build
         self.on_exit = on_exit
         self.redact = redact
+        self.ignore = ignore
         self.logs: collections.deque[str] = collections.deque(maxlen=LOG_LINES)
         self.proc: asyncio.subprocess.Process | None = None
         self.task: asyncio.Task | None = None
@@ -51,6 +52,8 @@ class Proc:
 
     def _log(self, line: str) -> None:
         line = self.redact(line.rstrip())
+        if any(x in line for x in self.ignore):
+            return
         self.logs.append(f"{time.strftime('%H:%M:%S')} {line}")
         log.info("[%s] %s", self.name, line)
         for fn in self._listeners:

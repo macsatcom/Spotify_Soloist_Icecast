@@ -22,6 +22,9 @@ PULSE_DIR = Path("/run/pulse")
 PULSE_SOCKET = PULSE_DIR / "native"
 PULSE_ENV = {"PULSE_SERVER": f"unix:{PULSE_SOCKET}"}
 EXIT_EXPIRED = 10
+# Harmless in a container (no D-Bus, no per-user home, system mode is intentional)
+PULSE_NOISE = ("system bus", "D-Bus", "running PA in system mode", "WhatIsWrongWithSystemWide",
+               "cookie", "authentication key", "Home directory of user")
 
 
 class Core:
@@ -39,7 +42,7 @@ class Core:
         self._bg: list[asyncio.Task] = []
         redact = lambda s: encoder.redact(self._redact_key(s), env)  # noqa: E731
 
-        self.pulse = Proc("pulseaudio", self._pulse_cmd, redact=redact)
+        self.pulse = Proc("pulseaudio", self._pulse_cmd, redact=redact, ignore=PULSE_NOISE)
         self.icecast = Proc("icecast", self._icecast_cmd, redact=redact)
         self.encoder = Proc("encoder", self._encoder_cmd, redact=redact)
         self.soloist = Proc("soloist", self._soloist_cmd, on_exit=self._soloist_exit, redact=redact)
@@ -68,6 +71,7 @@ class Core:
             f"alternate-sample-rate = {enc.sample_rate}\navoid-resampling = yes\n"
             "resample-method = soxr-vhq\nflat-volumes = no\nexit-idle-time = -1\n"
             "default-fragments = 4\ndefault-fragment-size-msec = 10\n"
+            "realtime-scheduling = no\nhigh-priority = no\n"
         )
         return (["pulseaudio", "--system", "--daemonize=no", "--disallow-exit",
                  "--disallow-module-loading", "-n", "-F", str(pa), f"--log-target=stderr",
