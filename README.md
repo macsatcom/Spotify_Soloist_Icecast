@@ -100,7 +100,26 @@ keeps that lossless end-to-end when FLAC is selected.
 | GET | `/api/v1/stream` | 302 to the Icecast stream |
 | GET | `/api/v1/listen[?uri=]` | activate, optionally play URI, 302 to stream (for Lyrion) |
 
-Search/browse (Spotify Web API) follows in a later milestone.
+### Search & browse (Spotify Web API)
+
+Soloist itself cannot search or list your library, so the container proxies the Spotify Web API.
+One-time setup in the **Browse** tab: create an app at developer.spotify.com/dashboard, add the
+redirect URI `http://127.0.0.1:8888/callback`, paste the Client ID, click *Connect*, approve, then
+paste the URL of the (non-loading) callback page back. Uses PKCE; the refresh token is stored in
+`secrets.json`. All results use the same entity shape as Soloist's events.
+
+| Method | Path | |
+|---|---|---|
+| GET/PUT/DELETE | `/api/v1/webapi` | status / `{client_id, redirect_uri}` / disconnect |
+| GET | `/api/v1/webapi/login` | authorize URL |
+| POST | `/api/v1/webapi/callback` | `{ "url": "<pasted redirect URL>" }` |
+| GET | `/api/v1/search?q=&type=track,album,artist,playlist,show,episode&limit=&offset=` | |
+| GET | `/api/v1/library/{playlists,albums,tracks,artists,shows,recent}` | paged (`limit`, `offset`) |
+| GET | `/api/v1/library/top/{tracks,artists}` | |
+| GET | `/api/v1/browse/{categories,new-releases}` | |
+| GET | `/api/v1/item/{spotify:type:id}` | item + children (playlist/album tracks, artist releases + top tracks, show episodes) |
+
+Paged responses: `{ items: [Entity], total, offset, limit, next }`.
 
 ## License
 

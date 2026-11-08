@@ -89,3 +89,30 @@ def test_format_title():
             "creators": [{"entity": {"decorations": {"identity": {"name": "A"}}}},
                          {"entity": {"decorations": {"identity": {"name": "B"}}}}]}}
     assert format_title(item) == "A, B - Song"
+
+
+def test_webapi_entity_and_page():
+    from app.webapi import entity, page
+    t = {"uri": "spotify:track:1", "type": "track", "name": "S", "duration_ms": 1000, "explicit": True,
+         "artists": [{"uri": "spotify:artist:a", "type": "artist", "name": "A"}],
+         "album": {"uri": "spotify:album:b", "type": "album", "name": "B",
+                   "images": [{"url": "big", "width": 640}, {"url": "small", "width": 64}, {"url": "mid", "width": 300}]}}
+    e = entity(t)
+    assert e["decorations"]["creators"][0]["entity"]["decorations"]["identity"]["name"] == "A"
+    covers = {c["size"]: c["url"] for c in e["decorations"]["visual_identity"]["cover"]}
+    assert covers["small"] == "small" and covers["xlarge"] == "big"
+    assert e["decorations"]["playback"]["content_ratings"] == ["explicit"]
+    p = page({"items": [{"track": t, "added_at": "x"}, {"track": None}], "total": 2, "next": None}, unwrap="track")
+    assert len(p["items"]) == 1 and p["items"][0]["added"] == {"added_at": "x"} and p["next"] is False
+
+
+def test_webapi_login_url(tmp_path):
+    from app.config import Store
+    from app.webapi import WebApi, WebApiError
+    s = Store(tmp_path)
+    w = WebApi(s)
+    with pytest.raises(WebApiError):
+        w.login_url()
+    s.update({"webapi": {"client_id": "abc"}})
+    u = w.login_url()
+    assert "client_id=abc" in u and "code_challenge_method=S256" in u and "127.0.0.1%3A8888" in u

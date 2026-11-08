@@ -88,6 +88,18 @@ pre.log{background:#0c0b09;border:1px solid var(--line);padding:12px;font:12px/1
 .toast{position:fixed;right:20px;bottom:20px;background:#221d16;border:1px solid var(--amber-d);padding:10px 16px;font:13px var(--mono);border-radius:3px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;max-width:420px}
 .toast.show{opacity:1;transform:none}
 .toast.err{border-color:var(--red)}
+.hd{display:flex;gap:20px;align-items:flex-end;margin-bottom:16px}
+.hd img{width:140px;height:140px;object-fit:cover;border:1px solid var(--line)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
+.tile{cursor:pointer;background:#15130f;border:1px solid var(--line);padding:8px;border-radius:3px;transition:.15s}
+.tile:hover{border-color:var(--amber)}
+.tile img{width:100%;aspect-ratio:1;object-fit:cover;background:#0c0b09;display:block}
+.tile b{display:block;font:600 14px var(--display);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{font-size:13px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.tile.round img{border-radius:50%}
+.queue li .act{display:flex;gap:6px}
+.queue li .act .btn{padding:5px 9px;font-size:11px}
+.queue li .n{cursor:default}
 @media (max-width:700px){.np{grid-template-columns:1fr}.vol{margin-left:0}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -107,6 +119,7 @@ pre.log{background:#0c0b09;border:1px solid var(--line);padding:12px;font:12px/1
 
 <nav role="tablist">
   <button role="tab" data-tab="player" aria-selected="true">Now playing</button>
+  <button role="tab" data-tab="browse">Browse</button>
   <button role="tab" data-tab="pair">Pairing</button>
   <button role="tab" data-tab="settings">Settings</button>
   <button role="tab" data-tab="updates">Updates</button>
@@ -146,6 +159,44 @@ pre.log{background:#0c0b09;border:1px solid var(--line);padding:12px;font:12px/1
   <div class="panel">
     <h2>Up next</h2>
     <ol class="queue" id="queue"></ol>
+  </div>
+</section>
+
+<!-- BROWSE -->
+<section id="browse">
+  <div class="panel" id="w-setup" style="display:none">
+    <h2>Connect Spotify Web API (for search &amp; library)</h2>
+    <ol class="steps">
+      <li>Create an app at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> (select <i>Web API</i>).</li>
+      <li>Add the redirect URI <code id="w-redir-show">http://127.0.0.1:8888/callback</code> exactly, and save.</li>
+      <li>Paste the app's Client ID below and click Connect. Log in and approve.</li>
+      <li>Your browser lands on a page that <b>fails to load</b>; that's expected. Copy the whole URL from the address bar and paste it below.</li>
+    </ol>
+    <div class="grid">
+      <div><label for="w-cid">Client ID</label><input id="w-cid"></div>
+      <div><label for="w-redir">Redirect URI</label><input id="w-redir"></div>
+    </div>
+    <div class="inline"><button class="btn primary" id="b-wconnect">Connect</button></div>
+    <div class="inline"><input id="w-paste" placeholder="http://127.0.0.1:8888/callback?code=…&amp;state=…"><button class="btn primary" id="b-wpaste">Finish</button></div>
+  </div>
+  <div id="w-main" style="display:none">
+    <div class="inline" style="margin:0 0 14px">
+      <input id="w-q" placeholder="Search tracks, albums, artists, playlists, podcasts…">
+      <button class="btn primary" id="b-wsearch">Search</button>
+    </div>
+    <div class="inline" style="margin:0 0 18px;flex-wrap:wrap" id="w-lib">
+      <button class="btn" data-lib="library/playlists">Playlists</button>
+      <button class="btn" data-lib="library/albums">Albums</button>
+      <button class="btn" data-lib="library/tracks">Liked songs</button>
+      <button class="btn" data-lib="library/artists">Artists</button>
+      <button class="btn" data-lib="library/shows">Podcasts</button>
+      <button class="btn" data-lib="library/recent">Recent</button>
+      <button class="btn" data-lib="library/top/tracks">Top tracks</button>
+      <button class="btn" data-lib="browse/new-releases">New releases</button>
+      <span style="margin-left:auto" class="ctx" id="w-user"></span>
+      <button class="btn danger" id="b-wdisc">Disconnect</button>
+    </div>
+    <div id="w-out"></div>
   </div>
 </section>
 
@@ -270,7 +321,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&
 $$('nav button').forEach(b => b.onclick = () => {
   $$('nav button').forEach(x => x.setAttribute('aria-selected', x === b));
   $$('section').forEach(s => s.classList.toggle('active', s.id === b.dataset.tab));
-  ({settings: loadConfig, updates: loadStatus, logs: loadLogs, player: loadQueue})[b.dataset.tab]?.();
+  ({browse: loadWeb, settings: loadConfig, updates: loadStatus, logs: loadLogs, player: loadQueue})[b.dataset.tab]?.();
   location.hash = b.dataset.tab;
 });
 if (location.hash) $(`nav button[data-tab="${location.hash.slice(1)}"]`)?.click();
@@ -417,6 +468,67 @@ async function loadLogs() {
 $('#b-logs').onclick = loadLogs; $('#l-comp').onchange = loadLogs;
 $('[data-restart]').onclick = async () => { const c = $('#l-comp').value; if (!c) return toast('Pick a component', true);
   if (!confirm('Restart ' + c + '?')) return; await api('/system/restart/' + c, 'POST'); toast(c + ' restarted'); setTimeout(loadLogs, 1500); };
+
+// browse
+let wst = {};
+async function loadWeb() {
+  wst = await api('/webapi');
+  $('#w-setup').style.display = wst.connected ? 'none' : ''; $('#w-main').style.display = wst.connected ? '' : 'none';
+  sv('#w-cid', wst.client_id); sv('#w-redir', wst.redirect_uri); $('#w-redir-show').textContent = wst.redirect_uri;
+  $('#w-user').textContent = wst.user ? `${wst.user.name || wst.user.id} · ${wst.user.product}` : '';
+  if (wst.connected && !$('#w-out').innerHTML) lib('library/playlists');
+}
+$('#b-wconnect').onclick = async () => {
+  await api('/webapi', 'PUT', {client_id: $('#w-cid').value, redirect_uri: $('#w-redir').value});
+  const r = await api('/webapi/login'); window.open(r.url, '_blank', 'noopener');
+};
+$('#b-wpaste').onclick = async () => { await api('/webapi/callback', 'POST', {url: $('#w-paste').value}); $('#w-paste').value = ''; toast('Connected'); loadWeb(); };
+$('#b-wdisc').onclick = async () => { if (confirm('Disconnect Spotify Web API?')) { await api('/webapi', 'DELETE'); $('#w-out').innerHTML = ''; loadWeb(); } };
+const sub = e => artists(e) || e.details?.publisher || (e.details?.total_tracks != null ? e.details.total_tracks + ' tracks' : '') || e.entity_type;
+const PLAYABLE_CONTAINERS = ['album', 'playlist', 'artist', 'show'];
+function tiles(items, title) {
+  if (!items?.length) return '';
+  return (title ? `<h2>${esc(title)}</h2>` : '') + `<div class="tiles" style="margin-bottom:22px">` + items.map(e =>
+    `<div class="tile ${e.entity_type === 'artist' ? 'round' : ''}" data-open="${esc(e.uri)}" tabindex="0"><img alt="" loading="lazy" src="${esc(cover(e, 'default') || cover(e) || '')}"><b>${esc(name(e))}</b><span>${esc(sub(e))}</span></div>`).join('') + '</div>';
+}
+function rows(items, title, ctx) {
+  if (!items?.length) return '';
+  return (title ? `<h2>${esc(title)}</h2>` : '') + '<ol class="queue" style="margin-bottom:22px">' + items.map(e =>
+    `<li><img alt="" loading="lazy" src="${esc(cover(e, 'small') || '')}"><span class="n">${esc(name(e))} <em>${esc(artists(e))}</em></span><span class="act">
+      <button class="btn" data-play="${esc(e.uri)}" ${ctx ? `data-ctx="${esc(ctx)}"` : ''}>Play</button>${e.entity_type === 'track' ? `<button class="btn" data-q="${esc(e.uri)}">Queue</button>` : ''}</span></li>`).join('') + '</ol>';
+}
+const isList = t => t === 'track' || t === 'episode';
+function render(items, title) { return isList(items?.[0]?.entity_type) ? rows(items, title) : tiles(items, title); }
+async function lib(path) {
+  $('#w-out').innerHTML = '<p class="ctx">loading…</p>';
+  try { const d = await api('/' + path + (path.includes('?') ? '&' : '?') + 'limit=50'); $('#w-out').innerHTML = render(d.items) || '<p class="ctx">Nothing here.</p>'; }
+  catch { $('#w-out').innerHTML = ''; }
+}
+$$('[data-lib]').forEach(b => b.onclick = () => lib(b.dataset.lib));
+async function search() {
+  const q = $('#w-q').value.trim(); if (!q) return;
+  $('#w-out').innerHTML = '<p class="ctx">searching…</p>';
+  const d = await api('/search?type=track,artist,album,playlist,show&limit=12&q=' + encodeURIComponent(q));
+  $('#w-out').innerHTML = rows(d.track?.items, 'Tracks') + tiles(d.artist?.items, 'Artists') + tiles(d.album?.items, 'Albums') +
+    tiles(d.playlist?.items, 'Playlists') + tiles(d.show?.items, 'Podcasts') || '<p class="ctx">No results.</p>';
+}
+$('#b-wsearch').onclick = search; $('#w-q').onkeydown = e => e.key === 'Enter' && search();
+async function openItem(uri) {
+  $('#w-out').innerHTML = '<p class="ctx">loading…</p>';
+  const d = await api('/item/' + encodeURIComponent(uri)), it = d.item;
+  let h = `<div class="hd"><img alt="" src="${esc(cover(it, 'large') || cover(it) || '')}"><div><div class="ctx">${esc(it.entity_type.toUpperCase())}</div>
+    <p class="title">${esc(name(it))}</p><p class="artist">${esc(artists(it))}</p><div class="ctrl"><button class="btn primary" data-play="${esc(it.uri)}">Play ${esc(it.entity_type)}</button></div></div></div>`;
+  if (d.top_tracks?.length) h += rows(d.top_tracks, 'Top tracks');
+  if (d.children) h += d.children.error ? `<p class="ctx">${esc(d.children.error)}</p>` : render(d.children.items, it.entity_type === 'artist' ? 'Releases' : '');
+  $('#w-out').innerHTML = h; scrollTo({top: 0, behavior: 'smooth'});
+}
+$('#w-out').onclick = e => {
+  const t = e.target.closest('[data-open],[data-play],[data-q]'); if (!t) return;
+  if (t.dataset.play) cmd('play', {uri: t.dataset.play}).then(() => toast('Playing'));
+  else if (t.dataset.q) cmd('queue', {uri: t.dataset.q}).then(() => toast('Queued'));
+  else openItem(t.dataset.open);
+};
+$('#w-out').onkeydown = e => { if (e.key === 'Enter' && e.target.dataset.open) openItem(e.target.dataset.open); };
 
 loadStatus(); loadNow(); loadQueue(); connectEvents(); setInterval(loadStatus, 15000);
 </script>
