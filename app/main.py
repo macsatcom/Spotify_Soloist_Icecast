@@ -430,9 +430,9 @@ async def new_releases(limit: int = 50, offset: int = 0):
 async def item(uri: str, limit: int = 50, offset: int = 0):
     """Details + children for any spotify:<type>:<id> URI (playlist/album/artist/show/track/episode)."""
     parts = uri.split(":")
-    if len(parts) != 3 or parts[0] != "spotify":
+    if len(parts) < 3 or parts[0] != "spotify":
         raise HTTPException(422, "expected spotify:<type>:<id>")
-    _, t, i = parts
+    t, i = parts[-2], parts[-1]  # also handles legacy spotify:user:<u>:playlist:<id>
     lim = {"limit": _lim(limit), "offset": offset}
     if t == "playlist":
         meta = await _w(webapi.get(f"/playlists/{i}"))
@@ -442,7 +442,9 @@ async def item(uri: str, limit: int = 50, offset: int = 0):
             try:
                 kids = page(await _w(webapi.get(f"/playlists/{i}/tracks", lim)), unwrap="track")
             except HTTPException:
-                kids = {"items": [], "total": 0, "error": "playlist contents not available to this app"}
+                kids = {"items": [], "total": 0, "error": "Spotify only lets development-mode apps list tracks of "
+                         "playlists you own or collaborate on. You can still play it; the queue on "
+                         "Now playing then shows its tracks."}
     elif t == "album":
         meta = await _w(webapi.get(f"/albums/{i}", ttl=3600))
         kids = page(await _w(webapi.get(f"/albums/{i}/tracks", lim, ttl=3600)))
