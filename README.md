@@ -116,8 +116,11 @@ paste the URL of the (non-loading) callback page back. Uses PKCE; the refresh to
 | GET | `/api/v1/search?q=&type=track,album,artist,playlist,show,episode&limit=&offset=` | |
 | GET | `/api/v1/library/{playlists,albums,tracks,artists,shows,recent}` | paged (`limit`, `offset`) |
 | GET | `/api/v1/library/top/{tracks,artists}` | |
-| GET | `/api/v1/browse/{categories,new-releases}` | |
+| GET | `/api/v1/browse/{categories,new-releases}` | currently 403 for development-mode Spotify apps |
 | GET | `/api/v1/item/{spotify:type:id}` | item + children (playlist/album tracks, artist releases + top tracks, show episodes) |
+
+Spotify restricts development-mode apps: playlist contents come from `/playlists/{id}/items`, artist
+releases are capped at 10 per page, and artist top tracks are approximated via search.
 
 Paged responses: `{ items: [Entity], total, offset, limit, next }`.
 

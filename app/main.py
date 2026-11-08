@@ -435,11 +435,14 @@ async def item(uri: str, limit: int = 50, offset: int = 0):
     _, t, i = parts
     lim = {"limit": _lim(limit), "offset": offset}
     if t == "playlist":
-        meta = await _w(webapi.get(f"/playlists/{i}", {"fields": "uri,type,name,description,images,owner,tracks.total"}))
-        try:
-            kids = page(await _w(webapi.get(f"/playlists/{i}/tracks", lim)), unwrap="track")
+        meta = await _w(webapi.get(f"/playlists/{i}"))
+        try:  # Spotify replaced /tracks (item key "track") with /items (key "item") in 2026
+            kids = page(await _w(webapi.get(f"/playlists/{i}/items", lim)), unwrap="item")
         except HTTPException:
-            kids = {"items": [], "total": 0, "error": "playlist contents not available to this app"}
+            try:
+                kids = page(await _w(webapi.get(f"/playlists/{i}/tracks", lim)), unwrap="track")
+            except HTTPException:
+                kids = {"items": [], "total": 0, "error": "playlist contents not available to this app"}
     elif t == "album":
         meta = await _w(webapi.get(f"/albums/{i}", ttl=3600))
         kids = page(await _w(webapi.get(f"/albums/{i}/tracks", lim, ttl=3600)))
@@ -447,12 +450,19 @@ async def item(uri: str, limit: int = 50, offset: int = 0):
             k["decorations"].setdefault("visual_identity", {"cover": entity(meta)["decorations"].get("visual_identity", {}).get("cover", [])})
     elif t == "artist":
         meta = await _w(webapi.get(f"/artists/{i}", ttl=3600))
-        albums = page(await _w(webapi.get(f"/artists/{i}/albums", {**lim, "include_groups": "album,single,compilation"}, ttl=3600)))
+        # dev-mode apps: artist albums max limit 10
+        albums = page(await _w(webapi.get(f"/artists/{i}/albums", {"limit": min(lim["limit"], 10), "offset": offset,
+                                                                    "include_groups": "album,single,compilation"}, ttl=3600)))
         try:
             tops = await _w(webapi.get(f"/artists/{i}/top-tracks", {"market": (webapi.user or {}).get("country") or "from_token"}, ttl=3600))
             top_tracks = [entity(x) for x in tops.get("tracks", [])]
-        except HTTPException:
-            top_tracks = []
+        except HTTPException:  # top-tracks is forbidden for dev-mode apps; approximate via search
+            try:
+                d = await _w(webapi.get("/search", {"q": f'artist:"{meta.get("name", "")}"', "type": "track", "limit": 10}, ttl=3600))
+                top_tracks = [e for e in page(d, "tracks")["items"]
+                              if any(c["entity"]["uri"] == meta.get("uri") for c in e["decorations"].get("creators", []))]
+            except HTTPException:
+                top_tracks = []
         return {"item": entity(meta), "top_tracks": top_tracks, "children": albums}
     elif t == "show":
         meta = await _w(webapi.get(f"/shows/{i}", ttl=3600))

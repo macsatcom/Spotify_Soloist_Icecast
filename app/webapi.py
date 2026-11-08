@@ -178,7 +178,8 @@ def entity(o: dict | None) -> dict | None:
     e = {"uri": o["uri"], "entity_type": t, "decorations": dec}
     extra = {k: o[k] for k in ("description", "publisher", "release_date", "total_tracks") if o.get(k)}
     if t == "playlist":
-        extra["total_tracks"] = ((o.get("tracks") or o.get("items") or {}).get("total"))
+        tr = o.get("items") if isinstance(o.get("items"), dict) else o.get("tracks")
+        extra["total_tracks"] = (tr or {}).get("total")
     if extra:
         e["details"] = extra
     return e
