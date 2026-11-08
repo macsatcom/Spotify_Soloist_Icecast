@@ -1,0 +1,7 @@
+.git
+.venv
+docker/data
+docker/cache
+data
+cache
+**/__pycache__

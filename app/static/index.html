@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soloist Icecast – Setup</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
+  label { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
+  input, select { padding: .4rem; width: 100%; box-sizing: border-box; }
+  button { margin-top: .8rem; padding: .45rem 1rem; cursor: pointer; }
+  pre { background: #f4f4f4; padding: .8rem; overflow: auto; max-height: 300px; font-size: 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .muted { color: #666; font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Soloist → Icecast</h1>
+<p class="muted">Interim setup page. The full web UI arrives in milestone 4.</p>
+
+<h2>Status</h2>
+<pre id="status">loading…</pre>
+<audio id="player" controls preload="none"></audio>
+
+<h2>Soloist</h2>
+<label for="key">API key <span class="muted" id="keyset"></span></label>
+<input id="key" type="password" placeholder="Paste key from developer.spotify.com/dashboard/soloist" autocomplete="off">
+<button onclick="saveKey()">Save key</button>
+
+<div class="row">
+  <div><label for="dev">Device name</label><input id="dev"></div>
+  <div><label for="vol">Initial volume</label><input id="vol" type="number" min="0" max="100"></div>
+</div>
+
+<h2>Encoder</h2>
+<div class="row">
+  <div><label for="codec">Codec</label>
+    <select id="codec"><option>mp3</option><option>aac</option><option>opus</option><option>vorbis</option><option>flac</option></select></div>
+  <div><label for="br">Bitrate (kbps, lossy only)</label><input id="br" type="number"></div>
+  <div><label for="sr">Sample rate</label><select id="sr"><option>44100</option><option>48000</option></select></div>
+  <div><label for="bd">Bit depth (FLAC)</label><select id="bd"><option>16</option><option>24</option></select></div>
+</div>
+<button onclick="saveSettings()">Save settings</button>
+
+<h2>Pairing &amp; updates</h2>
+<button onclick="post('/api/v1/system/pair')">Re-pair device</button>
+<button onclick="post('/api/v1/system/update')">Check for Soloist update</button>
+<button onclick="post('/api/v1/system/update?force=true')">Force re-download</button>
+
+<h2>Events</h2>
+<pre id="events"></pre>
+
+<script>
+const $ = id => document.getElementById(id);
+async function j(url, opt) { const r = await fetch(url, opt); const b = await r.json().catch(() => ({})); if (!r.ok) alert(b.detail || r.status); return b; }
+async function post(url) { const b = await j(url, {method: 'POST'}); log(JSON.stringify(b)); }
+function log(s) { const e = $('events'); e.textContent = (s + '\n' + e.textContent).slice(0, 20000); }
+async function refresh() {
+  const s = await j('/api/v1/status');
+  $('status').textContent = JSON.stringify(s, null, 2);
+  if (!$('player').src) $('player').src = s.stream.url;
+}
+async function loadConfig() {
+  const c = await j('/api/v1/config'), s = c.settings;
+  $('keyset').textContent = c.secrets.soloist_api_key ? '(set)' : '(not set)';
+  $('dev').value = s.soloist.device_name; $('vol').value = s.soloist.initial_volume ?? '';
+  $('codec').value = s.encoder.codec; $('br').value = s.encoder.bitrate_kbps;
+  $('sr').value = s.encoder.sample_rate; $('bd').value = s.encoder.bit_depth;
+}
+async function saveKey() {
+  await j('/api/v1/secrets/soloist_api_key', {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify({value: $('key').value})});
+  $('key').value = ''; loadConfig();
+}
+async function saveSettings() {
+  const body = {soloist: {device_name: $('dev').value, initial_volume: $('vol').value === '' ? null : +$('vol').value},
+    encoder: {codec: $('codec').value, bitrate_kbps: +$('br').value, sample_rate: +$('sr').value, bit_depth: +$('bd').value}};
+  const r = await j('/api/v1/config', {method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  log('saved; changed: ' + (r.changed || []).join(', '));
+  $('player').removeAttribute('src');
+}
+const es = new EventSource('/api/v1/events');
+es.onmessage = e => log(e.data);
+['auth_state','playback_state','track_changed','playback_changed','volume_changed','system','updater','queue_changed']
+  .forEach(t => es.addEventListener(t, e => log(t + ': ' + e.data.slice(0, 400))));
+loadConfig(); refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

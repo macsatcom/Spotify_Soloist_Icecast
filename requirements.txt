@@ -1,0 +1,5 @@
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+httpx==0.28.*
+websockets==14.*
+pydantic==2.*

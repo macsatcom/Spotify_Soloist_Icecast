@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+docker/.env
+docker/data/
+docker/cache/
+data/
+cache/
+.pytest_cache/

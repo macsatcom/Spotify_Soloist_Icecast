@@ -1,0 +1,13 @@
+# Icecast mode (internal/external) is selected with ICECAST_MODE in .env
+services:
+  soloist:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ghcr.io/macsatcom/soloist-icecast:latest
+    network_mode: host          # required: Spotify Connect discovery (mDNS)
+    env_file: .env
+    volumes:
+      - ${DATA_DIR:-./data}:/data
+      - ${CACHE_DIR:-./cache}:/cache
+    restart: unless-stopped
