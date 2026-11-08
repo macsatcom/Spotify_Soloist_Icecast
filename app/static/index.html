@@ -507,14 +507,17 @@ $$('[data-lib]').forEach(b => b.onclick = () => lib(b.dataset.lib));
 async function search() {
   const q = $('#w-q').value.trim(); if (!q) return;
   $('#w-out').innerHTML = '<p class="ctx">searching…</p>';
-  const d = await api('/search?type=track,artist,album,playlist,show&limit=12&q=' + encodeURIComponent(q));
+  let d; try { d = await api('/search?type=track,artist,album,playlist,show&limit=10&q=' + encodeURIComponent(q)); }
+  catch (e) { $('#w-out').innerHTML = `<p class="ctx">Search failed: ${esc(e.message)}</p>`; return; }
   $('#w-out').innerHTML = rows(d.track?.items, 'Tracks') + tiles(d.artist?.items, 'Artists') + tiles(d.album?.items, 'Albums') +
     tiles(d.playlist?.items, 'Playlists') + tiles(d.show?.items, 'Podcasts') || '<p class="ctx">No results.</p>';
 }
 $('#b-wsearch').onclick = search; $('#w-q').onkeydown = e => { if (e.key === 'Enter') search(); };
 async function openItem(uri) {
   $('#w-out').innerHTML = '<p class="ctx">loading…</p>';
-  const d = await api('/item/' + encodeURIComponent(uri)), it = d.item;
+  let d; try { d = await api('/item/' + encodeURIComponent(uri)); }
+  catch (e) { $('#w-out').innerHTML = `<p class="ctx">Failed: ${esc(e.message)}</p>`; return; }
+  const it = d.item;
   let h = `<div class="hd"><img alt="" src="${esc(cover(it, 'large') || cover(it) || '')}"><div><div class="ctx">${esc(it.entity_type.toUpperCase())}</div>
     <p class="title">${esc(name(it))}</p><p class="artist">${esc(artists(it))}</p><div class="ctrl"><button class="btn primary" data-play="${esc(it.uri)}">Play ${esc(it.entity_type)}</button></div></div></div>`;
   if (d.top_tracks?.length) h += rows(d.top_tracks, 'Top tracks');

@@ -366,7 +366,7 @@ async def search(q: str, type: str = "track,album,artist,playlist", limit: int =
     types = [t for t in type.split(",") if t in SEARCH_TYPES]
     if not types:
         raise HTTPException(422, f"type must be among {sorted(SEARCH_TYPES)}")
-    d = await _w(webapi.get("/search", {"q": q, "type": ",".join(types), "limit": min(limit, 50),
+    d = await _w(webapi.get("/search", {"q": q, "type": ",".join(types), "limit": max(1, min(limit, 10)),
                                         "offset": offset}, ttl=300))
     return {t: page(d, t + "s") for t in types if d.get(t + "s")}
 
